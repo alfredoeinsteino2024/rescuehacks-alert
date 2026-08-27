@@ -1,0 +1,11 @@
+{
+  "name": "rescuehacks-alert",
+  "version": "1.0.0",
+  "description": "Discreet USSD emergency alert system - dial a code, no visible menu, alert sent via WhatsApp",
+  "main": "functions/ussd-handler/index.js",
+  "scripts": {
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "author": "Fadipe Toluwanimi Alfred (ChainEngineers)",
+  "license": "MIT"
+}

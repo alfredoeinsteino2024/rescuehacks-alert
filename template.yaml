@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: RescueHacks Alert - discreet USSD emergency alert via WhatsApp
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 15
+    MemorySize: 256
+    Environment:
+      Variables:
+        WHATSAPP_TOKEN: '{{resolve:ssm:/rescuehacks/WHATSAPP_TOKEN:2}}'
+        WHATSAPP_PHONE_NUMBER_ID: '{{resolve:ssm:/rescuehacks/WHATSAPP_PHONE_NUMBER_ID:1}}'
+        EMERGENCY_CONTACT_NUMBER: '{{resolve:ssm:/rescuehacks/EMERGENCY_CONTACT_NUMBER:1}}'
+
+Resources:
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: rescuehacks-shared
+      ContentUri: layers/shared/
+      CompatibleRuntimes:
+        - nodejs20.x
+      RetentionPolicy: Delete
+
+  UssdHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: rescuehacks-ussd-handler
+      CodeUri: functions/ussd-handler/
+      Handler: index.handler
+      Layers:
+        - !Ref SharedLayer
+      Events:
+        UssdApi:
+          Type: Api
+          Properties:
+            Path: /ussd
+            Method: post
+
+Outputs:
+  UssdEndpoint:
+    Description: URL to register as the USSD callback in Africa's Talking
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/ussd"
