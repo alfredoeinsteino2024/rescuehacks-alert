@@ -5,11 +5,12 @@
 // digit) — running this against it would be classification theater, so it
 // never is.
 //
-// Every output is validated against a strict schema before use. If the API
-// call fails, times out, or returns something malformed, classify() falls
-// back to a deterministic keyword classifier rather than throwing — a
-// slower/dumber classification beats no classification in an emergency
-// pipeline.
+// Uses Google's Gemini API (gemini-3.1-flash-lite — stable, free-tier
+// eligible as of this writing). Every output is validated against a strict
+// schema before use. If the API call fails, times out, or returns something
+// malformed, classify() falls back to a deterministic keyword classifier
+// rather than throwing — a slower/dumber classification beats no
+// classification in an emergency pipeline.
 
 let config;
 try {
@@ -23,7 +24,7 @@ const VALID_SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
 const SYSTEM_PROMPT = `You are an emergency-report classification assistant. You are NOT a medical diagnostic system — you are triage support for human responders, who make the real decisions.
 
-Given a short emergency description, respond with ONLY a JSON object (no prose, no markdown fences) with exactly these fields:
+Given a short emergency description, respond with ONLY a JSON object with exactly these fields:
 {
   "category": one of ${JSON.stringify(VALID_CATEGORIES)},
   "severity": one of ${JSON.stringify(VALID_SEVERITIES)},
@@ -50,37 +51,39 @@ function validate(parsed) {
   };
 }
 
-async function callAnthropic(description) {
-  const { apiKey, model, timeoutMs } = config.anthropic;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+async function callGemini(description) {
+  const { apiKey, model, timeoutMs } = config.gemini;
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const response = await fetch(url, {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "x-goog-api-key": apiKey, // header, not a ?key= query param — keeps it out of access logs
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model,
-        max_tokens: 300,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: description }],
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text: description }] }],
+        generationConfig: {
+          responseMimeType: "application/json", // Gemini's native structured-output mode
+          maxOutputTokens: 300,
+        },
       }),
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Anthropic API error (${response.status}): ${errText}`);
+      throw new Error(`Gemini API error (${response.status}): ${errText}`);
     }
 
     const data = await response.json();
-    const text = (data.content || []).map((b) => b.text || "").join("").trim();
+    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
 
     let parsed;
     try {
@@ -142,7 +145,7 @@ function keywordFallback(description) {
  */
 async function classify(description) {
   try {
-    return await callAnthropic(description);
+    return await callGemini(description);
   } catch (err) {
     console.warn("AI_ANALYSIS_FAILED — using deterministic fallback:", err.message);
     return keywordFallback(description);

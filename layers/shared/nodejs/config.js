@@ -50,9 +50,12 @@ module.exports = {
     "5": "OTHER",
   },
 
-  anthropic: {
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    model: "claude-haiku-4-5-20251001",
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY,
+    // Stable, free-tier-eligible as of this writing. NOT gemini-2.5-flash —
+    // that generation is scheduled for shutdown; verify at
+    // ai.google.dev/gemini-api/docs/models before changing this.
+    model: "gemini-3.1-flash-lite",
     timeoutMs: 6000, // must stay well under the Lambda/USSD session timeout
   },
 

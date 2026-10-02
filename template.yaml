@@ -16,9 +16,9 @@ Globals:
         EMERGENCY_CONTACT_NUMBER: '{{resolve:ssm:/rescuehacks/EMERGENCY_CONTACT_NUMBER:1}}'
         INCIDENTS_TABLE: !Ref IncidentsTable
         # New parameters — create these before first deploy of this template:
-        #   aws ssm put-parameter --name "/rescuehacks/ANTHROPIC_API_KEY" --value "<key>" --type String
+        #   aws ssm put-parameter --name "/rescuehacks/GEMINI_API_KEY" --value "<key from aistudio.google.com>" --type String
         #   aws ssm put-parameter --name "/rescuehacks/DASHBOARD_API_KEY" --value "<any-strong-random-string>" --type String
-        ANTHROPIC_API_KEY: '{{resolve:ssm:/rescuehacks/ANTHROPIC_API_KEY:1}}'
+        GEMINI_API_KEY: '{{resolve:ssm:/rescuehacks/GEMINI_API_KEY:1}}'
         DASHBOARD_API_KEY: '{{resolve:ssm:/rescuehacks/DASHBOARD_API_KEY:1}}'
   Api:
     Cors:

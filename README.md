@@ -38,7 +38,7 @@ Report an emergency:
              → WhatsApp alert sent → END "Reference: RH-2026-XXXXXX"
 ```
 
-The free-text description is sent to Claude (Anthropic API) for category/severity/summary — validated against a strict schema, with a **deterministic keyword-based fallback** (`aiClassifier.js`) if the API call fails, times out, or returns something malformed. Classification never hard-fails the pipeline.
+The free-text description is sent to Google's Gemini API (free tier) for category/severity/summary — validated against a strict schema, with a **deterministic keyword-based fallback** (`aiClassifier.js`) if the API call fails, times out, or returns something malformed. Classification never hard-fails the pipeline.
 
 ## Responder Dashboard (`dashboard/index.html`)
 
@@ -70,7 +70,7 @@ Transitions are validated server-side (`statusLifecycle.js`) — skipping a step
               (Meta Cloud API)                (incidents-api → dashboard)
 ```
 
-**Stack:** AWS SAM, AWS Lambda (Node.js 20.x), API Gateway, DynamoDB, SSM Parameter Store, Africa's Talking (USSD gateway), Meta WhatsApp Cloud API, Anthropic API (Claude Haiku, Phase 2.0 classification only).
+**Stack:** AWS SAM, AWS Lambda (Node.js 20.x), API Gateway, DynamoDB, SSM Parameter Store, Africa's Talking (USSD gateway), Meta WhatsApp Cloud API, Gemini API (gemini-3.1-flash-lite, free tier, Phase 2.0 classification only).
 
 ## Project Structure
 
@@ -99,14 +99,14 @@ rescuehacks-alert/
 
 ## Setup & Deployment
 
-**Prerequisites:** AWS account, AWS SAM CLI, Node.js 20.x, an Africa's Talking sandbox account (a second sandbox app for Phase 2.0's callback), a Meta WhatsApp Business app, an Anthropic API key.
+**Prerequisites:** AWS account, AWS SAM CLI, Node.js 20.x, an Africa's Talking sandbox account (a second sandbox app for Phase 2.0's callback), a Meta WhatsApp Business app, a Gemini API key (free, aistudio.google.com).
 
 1. Store secrets in SSM Parameter Store:
    ```
    aws ssm put-parameter --name "/rescuehacks/WHATSAPP_TOKEN" --value "<token>" --type String
    aws ssm put-parameter --name "/rescuehacks/WHATSAPP_PHONE_NUMBER_ID" --value "<id>" --type String
    aws ssm put-parameter --name "/rescuehacks/EMERGENCY_CONTACT_NUMBER" --value "<number>" --type String
-   aws ssm put-parameter --name "/rescuehacks/ANTHROPIC_API_KEY" --value "<key>" --type String
+   aws ssm put-parameter --name "/rescuehacks/GEMINI_API_KEY" --value "<key from aistudio.google.com>" --type String
    aws ssm put-parameter --name "/rescuehacks/DASHBOARD_API_KEY" --value "<any-strong-random-string>" --type String
    ```
 2. Build and deploy:
