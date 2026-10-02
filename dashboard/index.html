@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RescueHacks Responder Dashboard</title>
+<style>
+  :root {
+    --critical: #d32f2f; --high: #f57c00; --medium: #fbc02d; --low: #689f38;
+    --bg: #0f1419; --panel: #1a2129; --border: #2a333d; --text: #e6edf3; --muted: #8b98a5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; white-space: nowrap; }
+  header input { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 4px; font-size: 13px; }
+  header input#apiUrl { flex: 1; min-width: 220px; }
+  button { background: #2563eb; border: none; color: white; padding: 7px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #1d4ed8; }
+  button.secondary { background: var(--panel); border: 1px solid var(--border); }
+  .stats { display: flex; gap: 16px; padding: 16px 24px; flex-wrap: wrap; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 18px; min-width: 110px; }
+  .stat .n { font-size: 24px; font-weight: 700; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  main { display: flex; gap: 16px; padding: 0 24px 24px; align-items: flex-start; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  tr { cursor: pointer; }
+  tr:hover td { background: #212b36; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: #0f1419; }
+  .badge.CRITICAL { background: var(--critical); color: white; }
+  .badge.HIGH { background: var(--high); color: white; }
+  .badge.MEDIUM { background: var(--medium); }
+  .badge.LOW { background: var(--low); color: white; }
+  #detail { width: 360px; flex-shrink: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; position: sticky; top: 16px; }
+  #detail h2 { font-size: 15px; margin: 0 0 4px; }
+  #detail .row { margin: 10px 0; font-size: 13px; }
+  #detail .row .k { color: var(--muted); font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+  #detail .reasons { font-size: 12px; color: var(--muted); margin: 4px 0 0 16px; }
+  #detail .timeline div { font-size: 12px; color: var(--muted); padding: 3px 0; }
+  #detail .empty { color: var(--muted); font-size: 13px; }
+  .error { color: var(--critical); font-size: 13px; padding: 0 24px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚨 RescueHacks Dashboard</h1>
+  <input id="apiUrl" placeholder="API Gateway base URL, e.g. https://xxxx.execute-api.us-east-1.amazonaws.com/Prod">
+  <input id="apiKey" placeholder="Dashboard key" type="password" style="width:160px">
+  <button onclick="connect()">Connect</button>
+  <button class="secondary" onclick="load()">Refresh</button>
+</header>
+
+<div class="stats" id="stats"></div>
+<div class="error" id="error"></div>
+
+<main>
+  <table>
+    <thead><tr><th>ID</th><th>Source</th><th>Type</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6" style="color:var(--muted)">Not connected yet.</td></tr></tbody>
+  </table>
+  <div id="detail"><div class="empty">Select an incident to see details.</div></div>
+</main>
+
+<script>
+let incidents = [];
+let selectedId = null;
+
+function connect() {
+  localStorage.setItem('rh_api', document.getElementById('apiUrl').value.replace(/\/$/, ''));
+  localStorage.setItem('rh_key', document.getElementById('apiKey').value);
+  load();
+}
+
+window.onload = () => {
+  const api = localStorage.getItem('rh_api');
+  const key = localStorage.getItem('rh_key');
+  if (api) document.getElementById('apiUrl').value = api;
+  if (key) document.getElementById('apiKey').value = key;
+  if (api && key) load();
+};
+
+async function api(path, options = {}) {
+  const base = localStorage.getItem('rh_api');
+  const key = localStorage.getItem('rh_key');
+  const res = await fetch(base + path, {
+    ...options,
+    headers: { 'x-dashboard-key': key, 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function load() {
+  document.getElementById('error').textContent = '';
+  try {
+    const data = await api('/api/incidents');
+    incidents = data.incidents || [];
+    renderStats();
+    renderRows();
+    if (selectedId) renderDetail(incidents.find(i => i.id === selectedId));
+  } catch (err) {
+    document.getElementById('error').textContent = 'Failed to load: ' + err.message;
+  }
+}
+
+function renderStats() {
+  const open = incidents.filter(i => i.status !== 'RESOLVED');
+  const critical = open.filter(i => i.priority?.level === 'CRITICAL');
+  const resolvedToday = incidents.filter(i => i.status === 'RESOLVED' &&
+    i.updatedAt?.slice(0, 10) === new Date().toISOString().slice(0, 10));
+  document.getElementById('stats').innerHTML = [
+    ['Active', open.length], ['Critical', critical.length], ['Resolved Today', resolvedToday.length],
+  ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+}
+
+function renderRows() {
+  if (incidents.length === 0) {
+    document.getElementById('rows').innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No incidents yet.</td></tr>';
+    return;
+  }
+  document.getElementById('rows').innerHTML = incidents.map(i => `
+    <tr onclick="selectIncident('${i.id}')">
+      <td>${i.id}</td>
+      <td>${i.source}</td>
+      <td>${i.emergencyType}</td>
+      <td><span class="badge ${i.priority?.level}">${i.priority?.level || '—'}</span></td>
+      <td>${i.status}</td>
+      <td>${new Date(i.createdAt).toLocaleTimeString()}</td>
+    </tr>`).join('');
+}
+
+function selectIncident(id) {
+  selectedId = id;
+  renderDetail(incidents.find(i => i.id === id));
+}
+
+const NEXT_STATUS = { PENDING: 'ACCEPTED', ACCEPTED: 'EN_ROUTE', EN_ROUTE: 'REACHED', REACHED: 'RESOLVED' };
+
+function renderDetail(i) {
+  if (!i) { document.getElementById('detail').innerHTML = '<div class="empty">Select an incident to see details.</div>'; return; }
+  const next = NEXT_STATUS[i.status];
+  document.getElementById('detail').innerHTML = `
+    <h2>${i.id}</h2>
+    <span class="badge ${i.priority?.level}">${i.priority?.level}</span> ${i.priority?.score}/100
+    <div class="row"><span class="k">Type</span>${i.emergencyType}</div>
+    <div class="row"><span class="k">Status</span>${i.status}</div>
+    ${i.description ? `<div class="row"><span class="k">Description</span>${escapeHtml(i.description)}</div>` : ''}
+    ${i.aiAnalysis ? `<div class="row"><span class="k">AI Summary (${i.aiAnalysis.source})</span>${escapeHtml(i.aiAnalysis.summary)}</div>` : ''}
+    <div class="row"><span class="k">Location</span>${i.location || 'LOCATION_UNAVAILABLE'}</div>
+    <div class="row"><span class="k">Reporter</span>${i.reporterPhone}</div>
+    <div class="row"><span class="k">WhatsApp</span>${i.notification?.whatsapp || '—'}</div>
+    <div class="row"><span class="k">Priority Reasons</span><div class="reasons">${(i.priority?.reasons || []).map(r => '• ' + escapeHtml(r)).join('<br>')}</div></div>
+    <div class="row"><span class="k">Timeline</span><div class="timeline">${(i.timeline || []).map(t => `<div>${t.status} — ${new Date(t.at).toLocaleTimeString()}</div>`).join('')}</div></div>
+    ${next ? `<button onclick="advance('${i.id}', '${next}')">Mark ${next.replace('_', ' ')}</button>` : '<div class="empty">Resolved — no further action.</div>'}
+  `;
+}
+
+async function advance(id, status) {
+  try {
+    await api(`/api/incidents/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    await load();
+  } catch (err) {
+    document.getElementById('error').textContent = 'Update failed: ' + err.message;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

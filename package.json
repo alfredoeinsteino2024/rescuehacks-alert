@@ -4,7 +4,7 @@
   "description": "Discreet USSD emergency alert system - dial a code, no visible menu, alert sent via WhatsApp",
   "main": "functions/ussd-handler/index.js",
   "scripts": {
-    "test": "echo \"No tests yet\" && exit 0"
+    "test": "node --test tests/unit/test-priority-engine.js tests/unit/test-ai-fallback.js tests/unit/test-status-lifecycle.js"
   },
   "author": "Fadipe Toluwanimi Alfred (ChainEngineers)",
   "license": "MIT"

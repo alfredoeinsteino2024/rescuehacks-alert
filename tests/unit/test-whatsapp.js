@@ -1,7 +1,7 @@
 // Local test for the WhatsApp alert path — run BEFORE deploying.
 // Loads .env via Node's native --env-file flag (Node 20.6+, no dependency needed).
 
-const { sendWhatsAppAlert } = require("../../functions/ussd-handler/whatsappNotify");
+const { sendWhatsAppAlert } = require("../../layers/shared/nodejs/whatsappNotify");
 
 async function run() {
   console.log("Sending test WhatsApp alert...");

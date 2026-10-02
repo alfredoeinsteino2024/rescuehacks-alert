@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: RescueHacks Alert - discreet USSD emergency alert via WhatsApp
+Description: >
+  RescueHacks — Phase 1 (discreet silent alert) + Phase 2.0 (general
+  AI-assisted emergency reporting) + responder dashboard API, one stack.
 
 Globals:
   Function:
@@ -12,8 +14,46 @@ Globals:
         WHATSAPP_TOKEN: '{{resolve:ssm:/rescuehacks/WHATSAPP_TOKEN:2}}'
         WHATSAPP_PHONE_NUMBER_ID: '{{resolve:ssm:/rescuehacks/WHATSAPP_PHONE_NUMBER_ID:1}}'
         EMERGENCY_CONTACT_NUMBER: '{{resolve:ssm:/rescuehacks/EMERGENCY_CONTACT_NUMBER:1}}'
+        INCIDENTS_TABLE: !Ref IncidentsTable
+        # New parameters — create these before first deploy of this template:
+        #   aws ssm put-parameter --name "/rescuehacks/ANTHROPIC_API_KEY" --value "<key>" --type String
+        #   aws ssm put-parameter --name "/rescuehacks/DASHBOARD_API_KEY" --value "<any-strong-random-string>" --type String
+        ANTHROPIC_API_KEY: '{{resolve:ssm:/rescuehacks/ANTHROPIC_API_KEY:1}}'
+        DASHBOARD_API_KEY: '{{resolve:ssm:/rescuehacks/DASHBOARD_API_KEY:1}}'
+  Api:
+    Cors:
+      AllowMethods: "'GET,PATCH,OPTIONS'"
+      AllowHeaders: "'Content-Type,x-dashboard-key'"
+      AllowOrigin: "'*'"
 
 Resources:
+  IncidentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: rescuehacks-incidents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: reporterPhone
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Used for duplicate/redial detection — recent open incidents from
+        # the same reporting number.
+        - IndexName: ReporterPhoneIndex
+          KeySchema:
+            - AttributeName: reporterPhone
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
   SharedLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
@@ -23,6 +63,7 @@ Resources:
         - nodejs20.x
       RetentionPolicy: Delete
 
+  # --- Phase 1: discreet silent alert (unchanged behavior) ---
   UssdHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -31,6 +72,9 @@ Resources:
       Handler: index.handler
       Layers:
         - !Ref SharedLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IncidentsTable
       Events:
         UssdApi:
           Type: Api
@@ -38,7 +82,64 @@ Resources:
             Path: /ussd
             Method: post
 
+  # --- Phase 2.0: general AI-assisted emergency reporting ---
+  UssdHandlerV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: rescuehacks-ussd-handler-v2
+      CodeUri: functions/ussd-handler-v2/
+      Handler: index.handler
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IncidentsTable
+      Events:
+        UssdV2Api:
+          Type: Api
+          Properties:
+            Path: /ussd-v2
+            Method: post
+
+  # --- Responder dashboard API ---
+  IncidentsApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: rescuehacks-incidents-api
+      CodeUri: functions/incidents-api/
+      Handler: index.handler
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IncidentsTable
+      Events:
+        ListIncidents:
+          Type: Api
+          Properties:
+            Path: /api/incidents
+            Method: get
+        GetIncident:
+          Type: Api
+          Properties:
+            Path: /api/incidents/{id}
+            Method: get
+        UpdateStatus:
+          Type: Api
+          Properties:
+            Path: /api/incidents/{id}/status
+            Method: patch
+
 Outputs:
   UssdEndpoint:
-    Description: URL to register as the USSD callback in Africa's Talking
+    Description: Register as the Africa's Talking callback for the discreet Phase 1 channel
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/ussd"
+  UssdV2Endpoint:
+    Description: Register as the Africa's Talking callback for the general Phase 2.0 channel
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/ussd-v2"
+  DashboardApiBaseUrl:
+    Description: Paste into dashboard/index.html's "API Gateway base URL" field
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  IncidentsTableName:
+    Description: DynamoDB table storing structured incident records
+    Value: !Ref IncidentsTable
